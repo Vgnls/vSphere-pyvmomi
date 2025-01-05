@@ -4,6 +4,7 @@ from prettytable import PrettyTable
 from tools.obj_helper import *
 from tools.power_helper import *
 from tools import task
+from tools.vm_helper import *
 
 
 def power_on(si, folder_name, vm_names=None, regex=None):
@@ -371,26 +372,26 @@ def clone(si, vm_name, template_name, datacenter_name=None, folder_name=None, da
             f"Managed object of type '[vim.VirtualMachine]' with name '{template_name}' not found."
         )
 
-    # determine datacenter
-    if datacenter_name is None:
-        datacenter_name = 'Datacenter'
-
     # locate the datacenter
     # datacenter = get_single_obj(si, [vim.Datacenter], datacenter_name)
     container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.Datacenter], True)
     datacenters = list(container_view.view)
 
     datacenter = None
-    for datacenter_temp in datacenters:
-        if datacenter_temp.name == datacenter_name:
-            datacenter = datacenter_temp
-            break
-    container_view.Destroy()
+    if datacenter_name:
+        for datacenter_temp in datacenters:
+            if datacenter_temp.name == datacenter_name:
+                datacenter = datacenter_temp
+                break
 
-    if not datacenter:
-        raise ManagedObjectNotFoundError(
-            f"Managed object of type '[vim.Datacenter]' with name '{datacenter_name}' not found."
-        )
+        if not datacenter:
+            raise ManagedObjectNotFoundError(
+                f"Managed object of type '[vim.Datacenter]' with name '{datacenter_name}' not found."
+            )
+    else:
+        datacenter = datacenters[0]
+
+    container_view.Destroy()
 
     # locate the folder
     folder = None
@@ -538,3 +539,114 @@ def clone(si, vm_name, template_name, datacenter_name=None, folder_name=None, da
     tasks = [template.Clone(folder=folder, name=vm_name, spec=clonespec)]
     task.wait_for_tasks(si, tasks)
     print(f"Virtual machines: {vm_name} cloned successfully.")
+
+
+def customize(si, vm_name, vm_ip, vm_mask, vm_gateway, vm_dns, vm_hostname, network_name=None, folder_name=None):
+    """
+    Modify the network configuration of a virtual machine, including IP, subnet mask, gateway, DNS, and hostname.
+
+    :param si: service instance object connected to vCenter
+    :param vm_name: name of the virtual machine
+    :param vm_ip: IP address to assign to the virtual machine
+    :param vm_mask: subnet mask for the IP address
+    :param vm_gateway: gateway for the virtual machine
+    :param vm_dns: DNS server address
+    :param vm_hostname: hostname for the virtual machine
+    :param network_name: specific network name for multi-NIC virtual machines
+    :param folder_name: name of the folder containing the virtual machine
+    :return: none
+    """
+    content = si.RetrieveContent()
+
+    folder = None
+    if folder_name:
+        # folder = get_single_obj(si, [vim.Folder], folder_name)
+        container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.Folder], True)
+        folders = list(container_view.view)
+
+        for folder_temp in folders:
+            if folder_temp.name == folder_name:
+                folder = folder_temp
+                break
+        container_view.Destroy()
+
+        if not folder:
+            raise ManagedObjectNotFoundError(
+                f"Managed object of type '[vim.Folder]' with name '{folder_name}' not found."
+            )
+    else:
+        folder = content.rootFolder
+
+    vm = None
+    container_view = content.viewManager.CreateContainerView(folder, [vim.VirtualMachine], True)
+    vms = list(container_view.view)
+
+    for vm_temp in vms:
+        if vm_temp.name == vm_name and not vm_temp.summary.config.template:
+            vm = vm_temp
+            break
+    container_view.Destroy()
+
+    if not vm:
+        raise ManagedObjectNotFoundError(
+            f"Managed object of type '[vim.VirtualMachine]' with name '{vm_name}' not found."
+        )
+
+    # create adapter mappings
+    adaptermaps = []
+    for net in vm.guest.net:
+        adapter_map = vim.vm.customization.AdapterMapping()
+        adapter_map.adapter = vim.vm.customization.IPSettings()
+        adapter_map.adapter.ip = vim.vm.customization.FixedIp()
+
+        # configure the adapter based on whether a specific network is provided
+        if network_name:
+            if net.network == network_name:
+                # if a specific network matches, assign the given or default IP configuration
+                adapter_map.adapter.ip.ipAddress = vm_ip or net.ipAddress[0]
+                adapter_map.adapter.subnetMask = vm_mask or gen_mask(net.ipConfig.ipAddress[0].prefixLength)
+                adapter_map.adapter.gateway = vm_gateway or vm.guest.ipStack[0].ipRouteConfig.ipRoute[
+                    0].gateway.ipAddress
+            else:
+                # for other nic, retain their original configuration
+                adapter_map.adapter.ip.ipAddress = net.ipAddress[0]
+                adapter_map.adapter.subnetMask = gen_mask(net.ipConfig.ipAddress[0].prefixLength)
+                adapter_map.adapter.gateway = vm.guest.ipStack[0].ipRouteConfig.ipRoute[0].gateway.ipAddress
+        else:
+            # for single NIC without network_name, use the provided IP configuration
+            adapter_map.adapter.ip.ipAddress = vm_ip
+            adapter_map.adapter.subnetMask = vm_mask
+            adapter_map.adapter.gateway = vm_gateway
+
+        adaptermaps.append(adapter_map)
+
+    # reverse the adapter mappings to maintain the correct order for customization
+    adaptermaps.reverse()
+
+    # set global IP settings
+    global_ip = vim.vm.customization.GlobalIPSettings()
+    if vm_dns:
+        global_ip.dnsServerList = [vm_dns]
+    elif vm.guest.ipStack:
+        global_ip.dnsServerList = vm.guest.ipStack[0].dnsConfig.ipAddress
+
+    # configure the identity settings for Linux virtual machines
+    ident = vim.vm.customization.LinuxPrep()
+    ident.hostName = vim.vm.customization.FixedName()
+    ident.hostName.name = vm_hostname if vm_hostname else vm.guest.ipStack[0].dnsConfig.hostName
+
+    # create the customization specification
+    custom_spec = vim.vm.customization.Specification()
+    custom_spec.nicSettingMap = adaptermaps
+    custom_spec.globalIPSettings = global_ip
+    custom_spec.identity = ident
+
+    # Power off the virtual machine if it is powered on
+    if vm.runtime.powerState != "poweredOff":
+        power_off(si, folder_name, vm_name)
+
+    # apply the customization specification to the virtual machine
+    tasks = [vm.Customize(spec=custom_spec)]
+    task.wait_for_tasks(si, tasks)
+
+    print(f"Virtual machines with name '{vm_name}' customization completed successfully.")

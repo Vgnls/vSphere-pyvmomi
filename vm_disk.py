@@ -200,7 +200,7 @@ def customize(si, vm_name, disk_index=1, disk_size=None, disk_mode=None, scsi_co
     if scsi_controller:
         if scsi_controller not in range(65) or scsi_controller == 7:
             raise ValueError(
-                f"SCSI controller unit number (0:{scsi_controller}) must be in the range 0-6 or 8-64."
+                f"SCSI controller unit number ({scsi_controller}) must be in the range 0-6 or 8-64."
             )
         disk_spec.device.unitNumber = scsi_controller
 

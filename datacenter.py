@@ -196,7 +196,7 @@ def info(si, datacenter_name, folder_name=None):
         )
 
     table = PrettyTable()
-    table.field_names = ["Datacenter Name", "Host number", "Machine number", "Cluster Number", "Network Number",
+    table.field_names = ["Datacenter Name", "Host number", "VM number", "Cluster Number", "Network Number",
                          "Datastore number", "Template number"]
 
     # collect information

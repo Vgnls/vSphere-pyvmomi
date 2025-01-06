@@ -4,7 +4,7 @@ from tools import task
 from prettytable import PrettyTable
 
 
-def create(si, datacenter_name, folder_name=None):
+def add(si, datacenter_name, folder_name=None):
     """
     Create a datacenter with the specified name.
 

@@ -237,10 +237,18 @@ def info(si, folder_name, folder_type='dataFolder'):
 
 
 def rename(si, folder_name, new_name):
+    """
+    Rename a specified folder.
+
+    :param si: Service instance object connected to vCenter
+    :param folder_name: Current name of the folder to rename
+    :param new_name: New name to assign to the folder
+    :return: none
+    """
     content = si.RetrieveContent()
 
     folder = None
-    # locate the folder folder or use the root folder
+    # locate the folder by its name
     if folder_name:
         # folder = get_single_obj(si, [vim.Folder], parent_name)
         container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.Folder], True)
@@ -257,9 +265,10 @@ def rename(si, folder_name, new_name):
                 f"Managed object of type '[vim.Folder]' with name '{folder_name}' not found."
             )
     else:
+        # use the root folder if no specific name is provided
         folder = content.rootFolder
 
-    # locate and rename the folder
+    # initiate the rename operation
     tasks = [folder.Rename_Task(new_name)]
     task.wait_for_tasks(si, tasks)
     print(f"Folder '{folder_name}' renamed to '{new_name}' successfully.")

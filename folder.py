@@ -234,3 +234,36 @@ def info(si, folder_name, folder_type='dataFolder'):
 
     print(f"Folder '{folder_name}' information:")
     display_function(folder)
+
+
+def rename(si, folder_name, new_name):
+    content = si.RetrieveContent()
+
+    folder = None
+    # locate the folder folder or use the root folder
+    if folder_name:
+        # folder = get_single_obj(si, [vim.Folder], parent_name)
+        container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.Folder], True)
+        folders = list(container_view.view)
+
+        for folder_temp in folders:
+            if folder_temp.name == folder_name:
+                folder = folder_temp
+                break
+        container_view.Destroy()
+
+        if not folder:
+            raise ManagedObjectNotFoundError(
+                f"Managed object of type '[vim.Folder]' with name '{folder_name}' not found."
+            )
+    else:
+        folder = content.rootFolder
+
+    tasks = list()
+    # locate and rename the folder
+    for child in folder.childEntity:
+        if isinstance(child, vim.Folder) and child.name == folder_name:
+            tasks.append(child.Rename_Task(new_name))
+
+    task.wait_for_tasks(si, tasks)
+    print(f"Folder '{folder_name}' renamed to '{new_name}' successfully.")

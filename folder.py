@@ -259,11 +259,7 @@ def rename(si, folder_name, new_name):
     else:
         folder = content.rootFolder
 
-    tasks = list()
     # locate and rename the folder
-    for child in folder.childEntity:
-        if isinstance(child, vim.Folder) and child.name == folder_name:
-            tasks.append(child.Rename_Task(new_name))
-
+    tasks = [folder.Rename_Task(new_name)]
     task.wait_for_tasks(si, tasks)
     print(f"Folder '{folder_name}' renamed to '{new_name}' successfully.")

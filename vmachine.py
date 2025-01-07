@@ -153,6 +153,62 @@ def destroy(si, folder_name, vm_names=None, regex=None):
     print(f"Virtual machines: {', '.join(action_names)} destroyed successfully.")
 
 
+def rename(si, vm_name, new_name, folder_name=None):
+    """
+    Rename a virtual machine.
+
+    :param si: service instance object connected to vCenter
+    :param vm_name: the current name of the VM to be renamed
+    :param new_name: the new name to assign to the VM
+    :param folder_name: the folder name containing the VM
+    :return:
+    """
+    content = si.RetrieveContent()
+
+    # locate the specified folder
+    folder = None
+    if not folder_name:
+        folder = content.rootFolder
+    else:
+        # folder = get_single_obj(si, [vim.Folder], folder_name)
+        container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.Folder], True)
+        folders = list(container_view.view)
+
+        for folder_temp in folders:
+            if folder_temp.name == folder_name:
+                folder = folder_temp
+                break
+        container_view.Destroy()
+
+        if not folder:
+            raise ManagedObjectNotFoundError(
+                f"Managed object of type '[vim.Folder]' with name '{folder_name}' not found."
+            )
+
+    # locate the virtual machine by its name in the specified folder
+    # vms = get_all_obj(si, [vim.VirtualMachine], folder_name)
+    container_view = content.viewManager.CreateContainerView(folder, [vim.VirtualMachine], True)
+    vms = list(container_view.view)
+
+    vm = None
+    for vm_temp in vms:
+        # exclude templates from the search
+        if vm_temp.name == vm_name and not vm_temp.summary.config.template:
+            vm = vm_temp
+            break
+    container_view.Destroy()
+
+    if not vm:
+        raise ManagedObjectNotFoundError(
+            f"Managed object of type '[vim.VirtualMachine]' with name '{vm_name}' not found."
+        )
+
+    # initiate the rename task for the virtual machine
+    tasks = [vm.Rename_Task(new_name)]
+    task.wait_for_tasks(si, tasks)
+    print(f"Virtual machine '{vm_name}' renamed to '{new_name}' successfully.")
+
+
 def show(si, folder_name=None):
     """
     Display brief information about virtual machines in a folder.

@@ -100,6 +100,57 @@ def rename(si, datastore_name, new_name, datacenter_name):
     print(f"Datastore '{datastore_name}' renamed to '{new_name}' successfully.")
 
 
+def refresh(si, datastore_name, datacenter_name):
+    """
+    Refresh a specified datastore in a given datacenter.
+
+    :param si: service instance object connected to vCenter
+    :param datastore_name: name of the datastore to be refreshed
+    :param datacenter_name: name of the datacenter where the datastore is located
+    :return: none
+    """
+    content = si.RetrieveContent()
+
+    # locate the datacenter by name
+    container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.Datacenter], True)
+    datacenters = list(container_view.view)
+
+    datacenter = None
+    # locate the datacenter
+    for datacenter_temp in datacenters:
+        if datacenter_temp.name == datacenter_name:
+            datacenter = datacenter_temp
+            break
+    container_view.Destroy()
+
+    if not datacenter:
+        raise ManagedObjectNotFoundError(
+            f"Managed object of type '[vim.Datacenter]' with name '{datacenter_name}' not found."
+        )
+
+    datastore = None
+    # locate the datastore by name
+    datastores = datacenter.datastore
+    for datastore_temp in datastores:
+        if datastore_temp.name == datastore_name:
+            datastore = datastore_temp
+            break
+
+    if not datastore:
+        raise ManagedObjectNotFoundError(
+            f"Managed object of type '[vim.Datastore]' with name '{datastore_name}' not found in datacenter"
+            f" '{datacenter_name}'."
+        )
+
+    # refresh the datastore and update its storage information
+    datastore.Refresh()
+    datastore.RefreshDatastore()
+    datastore.RefreshDatastoreStorageInfo()
+    datastore.RefreshStorageInfo()
+
+    print(f"Datastore '{datastore_name}' refreshed successfully.")
+
+
 def info(si, datastore_name, datacenter_name):
     """
     Display information about a specific datastore in a datacenter.

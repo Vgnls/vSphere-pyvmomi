@@ -2,6 +2,7 @@ from pyVmomi import vim
 import re
 from prettytable import PrettyTable
 from tools.obj_helper import *
+from tools import task
 
 
 def add(si, vswitch_name: str, portgroup_name: str, vlan_id: str, hosts_name: list):
@@ -137,3 +138,68 @@ def show(si, hosts_name=None):
 
         print("The port groups are:")
         print(table)
+
+
+def rename(si, portgroup_name, new_name, host_name):
+    """
+    Rename a port group on a specified host in vCenter.
+
+    :param si: service instance connected to vCenter
+    :param portgroup_name: name of the existing port group
+    :param new_name: new name for the port group
+    :param host_name: name of the host containing the port group
+    :return: none
+    """
+    content = si.RetrieveContent()
+
+    container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.HostSystem], True)
+    host_view = list(container_view.view)
+
+    host = None
+    if host_name:
+        # host = get_given_obj(si, [vim.HostSystem], host_name)
+        for host_temp in host_view:
+            if host_temp.name == host_name:
+                host = host_temp
+    else:
+        # host = get_all_obj(si, [vim.HostSystem])
+        # if no host names are provided, show all host
+        host = host_view
+    container_view.Destroy()
+
+    if host is None:
+        raise ManagedObjectNotFoundError(
+            f"Managed object of type [vim.HostSystem] with name '{', '.join(host_name)}' not found."
+        )
+
+    port_group = None
+    # find the specified port group on the host
+    for pgroup in host.configManager.networkSystem.networkConfig.portgroup:
+        if pgroup.spec.name == portgroup_name:
+            port_group = pgroup
+            break
+
+    if not port_group:
+        raise ManagedObjectNotFoundError(
+            f"Port group '{portgroup_name}' not found on host '{host_name}'."
+        )
+
+    # prepare a new port group specification
+    portgroup_spec = vim.host.PortGroup.Specification()
+
+    portgroup_spec.vswitchName = port_group.spec.vswitchName
+    portgroup_spec.name = new_name
+    # ensure VLAN ID is an integer
+    portgroup_spec.vlanId = int(port_group.spec.vlanId)
+
+    # copy network policies
+    network_policy = vim.host.NetworkPolicy()
+    network_policy.security = vim.host.NetworkPolicy.SecurityPolicy()
+    network_policy.security.allowPromiscuous = port_group.spec.policy.security.allowPromiscuous
+    network_policy.security.macChanges = port_group.spec.policy.security.macChanges
+    network_policy.security.forgedTransmits = port_group.spec.policy.security.forgedTransmits
+    portgroup_spec.policy = network_policy
+
+    # update the port group on the host
+    host.configManager.networkSystem.UpdatePortGroup(portgroup_name, portgroup_spec)
+    print(f"Port group {portgroup_name} renamed to '{new_name}' successfully.")

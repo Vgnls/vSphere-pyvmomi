@@ -166,6 +166,51 @@ def remove_all(si, vm_name):
     print(f"All snapshots removed successfully from virtual machine '{vm_name}'.")
 
 
+def rename(si, vm_name, snapshot_name, new_name):
+    """
+    Rename a snapshot of a virtual machine.
+
+    :param si: service instance object connected to vCenter
+    :param vm_name: name of the virtual machine
+    :param snapshot_name: name of the snapshot to be renamed
+    :param new_name: new name for the snapshot
+    :return: none
+    """
+    content = si.RetrieveContent()
+
+    vm = None
+    # locate the virtual machine by name
+    container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.VirtualMachine], True)
+    vms = list(container_view.view)
+
+    for vm_temp in vms:
+        if vm_temp.name == vm_name and not vm_temp.summary.config.template:
+            vm = vm_temp
+            break
+    container_view.Destroy()
+
+    if not vm:
+        raise ManagedObjectNotFoundError(
+            f"Managed object of type '[vim.VirtualMachine]' with name '{vm_name}' not found."
+        )
+
+    snapshot = None
+    # locate the snapshot by name
+    for snapshot_temp in vm.snapshot.rootSnapshotList:
+        if snapshot_temp.name == snapshot_name:
+            snapshot = snapshot_temp
+            break
+
+    if not snapshot:
+        raise ManagedObjectNotFoundError(
+            f"Snapshot '{snapshot_name}' not found for virtual machine '{vm_name}'."
+        )
+
+    # rename the snapshot
+    snapshot.snapshot.Rename(new_name)
+    print(f"Snapshot '{snapshot_name}' renamed to '{new_name}' successfully for virtual machine '{vm_name}'.")
+
+
 def show(si, vm_name):
     """
     Display all snapshots of a virtual machine.

@@ -81,6 +81,60 @@ def delete(si, vswitch_name: str, hosts_name: list):
     print(f"Virtual switch {vswitch_name} deleted successfully.")
 
 
+def customize(si, vswitch_name, vnic_name, host_name):
+    """
+    Customize a virtual switch by modifying its uplink (vNIC) on a specified host.
+
+    :param si: service instance object connected to vCenter
+    :param vswitch_name: name of the virtual switch to be customized
+    :param vnic_name: name of the virtual NIC to be set as the uplink
+    :param host_name: name of the host where the virtual switch exists
+    :return: none
+    """
+    content = si.RetrieveContent()
+
+    # hosts = get_given_obj(si, [vim.HostSystem], host_name)
+    container_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.HostSystem], True)
+    host_view = list(container_view.view)
+
+    host = None
+    # locate the host by name
+    for host_temp in host_view:
+        if host_temp.name == host_name:
+            host = host_temp
+    container_view.Destroy()
+
+    if host is None:
+        raise ManagedObjectNotFoundError(
+            f"Managed object of type [vim.HostSystem] with name '{', '.join(host_name)}' not found."
+        )
+
+    vswitch = None
+    # locate the virtual switch by name
+    for vswitch_temp in host.configManager.networkSystem.networkConfig.vswitch:
+        if vswitch_temp.name == vswitch_name:
+            vswitch = vswitch_temp
+            break
+
+    if not vswitch:
+        raise ManagedObjectNotFoundError(
+            f"Virtual switch '{vswitch_name}' not found on host '{host_name}'."
+        )
+
+    # create the virtual switch specification to modify the uplink
+    vswitch_spec = vim.host.VirtualSwitch.Specification()
+
+    # set the virtual NIC as the uplink
+    vswitch_spec.bridge = vim.host.VirtualSwitch.BondBridge(nicDevice=[vnic_name])
+    # retain original number of ports and mtu
+    vswitch_spec.numPorts = vswitch.spec.numPorts
+    vswitch_spec.mtu = vswitch.spec.mtu
+
+    # update the virtual switch on the host
+    host.configManager.networkSystem.UpdateVirtualSwitch(vswitch_name, vswitch_spec)
+    print(f"Virtual switch '{vswitch_name}' successfully updated with uplink '{vnic_name}' on host '{host_name}'.")
+
+
 def show(si, hosts_name=None):
     """
     Show the virtual switches on specified hosts.
@@ -96,12 +150,11 @@ def show(si, hosts_name=None):
 
     hosts = list()
     if hosts_name:
-        # hosts = get_given_obj(si, [vim.HostSystem], host_name)
+        # filter hosts based on provided names
         for host_temp in host_view:
             if host_temp.name in hosts_name:
                 hosts.append(host_temp)
     else:
-        # hosts = get_all_obj(si, [vim.HostSystem])
         # if no host names are provided, show all hosts
         hosts = host_view
     container_view.Destroy()
